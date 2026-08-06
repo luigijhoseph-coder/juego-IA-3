@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bot Shooter 2D</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body {
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    h1 {
+      margin-bottom: 8px;
+      font-size: 1.6rem;
+      letter-spacing: 2px;
+      color: #f43f5e;
+      text-transform: uppercase;
+      text-shadow: 0 0 10px rgba(244, 63, 94, 0.5);
+    }
+    #game-container {
+      position: relative;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+      border-radius: 8px;
+      overflow: hidden;
+      border: 2px solid #334155;
+    }
+    canvas {
+      display: block;
+      background: #1e293b;
+      cursor: crosshair;
+    }
+    .instructions {
+      margin-top: 10px;
+      color: #94a3b8;
+      font-size: 0.85rem;
+      text-align: center;
+    }
+    .instructions span {
+      background: #334155;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #f8fafc;
+      border: 1px solid #475569;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Bot Shooter - Wave Survival</h1>
+  <div id="game-container">
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+  </div>
+  <p class="instructions">
+    Mover: <span>W</span> <span>A</span> <span>S</span> <span>D</span> | Apuntar: <span>Mover Ratón</span> | Disparar: <span>Clic Izquierdo</span>
+  </p>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Estado del Juego
+    let isGameOver = false;
+    let score = 0;
+    let wave = 1;
+    let botsToSpawn = 3;
+
+    // Teclas presionadas
+    const keys = {};
+
+    // Coordenadas del ratón
+    const mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+
+    // Eventos
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    });
+
+    canvas.addEventListener('mousedown', e => {
+      if (e.button === 0) {
+        if (isGameOver) {
+          restartGame();
+        } else {
+          player.shoot();
+        }
+      }
+    });
+
+    // Clase Jugador
+    class Player {
+      constructor() {
+        this.x = canvas.width / 2;
+        this.y = canvas.height / 2;
+        this.radius = 18;
+        this.speed = 4;
+        this.maxHealth = 100;
+        this.health = 100;
+        this.angle = 0;
+      }
+
+      update() {
+        // Movimiento WASD
+        if (keys['KeyW'] || keys['ArrowUp']) this.y -= this.speed;
+        if (keys['KeyS'] || keys['ArrowDown']) this.y += this.speed;
+        if (keys['KeyA'] || keys['ArrowLeft']) this.x -= this.speed;
+        if (keys['KeyD'] || keys['ArrowRight']) this.x += this.speed;
+
+        // Limites de pantalla
+        this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+        this.y = Math.max(this.radius, Math.min(canvas.height - this.radius, this.y));
+
+        // Angulo hacia el ratón
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        this.angle = Math.atan2(dy, dx);
+      }
+
+      shoot() {
+        const bulletSpeed = 10;
+        const vx = Math.cos(this.angle) * bulletSpeed;
+        const vy = Math.sin(this.angle) * bulletSpeed;
+        // Salida del disparo desde el cañón
+        const barrelX = this.x + Math.cos(this.angle) * (this.radius + 5);
+        const barrelY = this.y + Math.sin(this.angle) * (this.radius + 5);
+        
+        bullets.push(new Bullet(barrelX, barrelY, vx, vy));
+      }
+
+      draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+
+        // Cañón del arma
+        ctx.fillStyle = '#64748b';
+        ctx.fillRect(0, -4, this.radius + 10, 8);
+
+        // Cuerpo del jugador
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#38bdf8';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#0284c7';
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    }
+
+    // Clase Proyectil (Bala)
+    class Bullet {
+      constructor(x, y, vx, vy) {
+        this.x = x;
+        this.y = y;
+        this.vx = vx;
+        this.vy = vy;
+        this.radius = 4;
+      }
+
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#facc15';
+        ctx.fill();
+      }
+    }
+
+    // Clase Bot (Enemigo)
+    class Bot {
+      constructor(x, y, speed, health) {
+        this.x = x;
+        this.y = y;
+        this.radius = 16;
+        this.speed = speed;
+        this.maxHealth = health;
+        this.health = health;
+      }
+
+      update() {
+        // Perseguir al jugador
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const angle = Math.atan2(dy, dx);
+
+        this.x += Math.cos(angle) * this.speed;
+        this.y += Math.sin(angle) * this.speed;
+
+        // Colisión con el jugador
+        const dist = Math.hypot(dx, dy);
+        if (dist < this.radius + player.radius) {
+          player.health -= 0.5; // Daño por contacto continuo
+          if (player.health <= 0) {
+            player.health = 0;
+            isGameOver = true;
+          }
+        }
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#f43f5e';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#be123c';
+        ctx.stroke();
+
+        // Barra de vida del bot
+        if (this.health < this.maxHealth) {
+          const barW = 24;
+          const barH = 4;
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.fillRect(this.x - barW / 2, this.y - this.radius - 8, barW, barH);
+          ctx.fillStyle = '#22c55e';
+          ctx.fillRect(this.x - barW / 2, this.y - this.radius - 8, (this.health / this.maxHealth) * barW, barH);
+        }
+      }
+    }
+
+    // Clase Partícula (Explosiones)
+    class Particle {
+      constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.radius = Math.random() * 3 + 1;
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 4 + 1;
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+        this.alpha = 1;
+      }
+
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha -= 0.03;
+      }
+
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Listas del Juego
+    let player = new Player();
+    let bullets = [];
+    let bots = [];
+    let particles = [];
+
+    // Spawner de Enemigos en bordes de la pantalla
+    function spawnWave() {
+      const baseSpeed = 1.2 + Math.min(wave * 0.15, 2.0); // Velocidad progresiva
+      const botHealth = 20 + Math.floor(wave * 5); // Vida progresiva
+
+      for (let i = 0; i < botsToSpawn; i++) {
+        let x, y;
+        // Aparecer por fuera de los bordes del canvas
+        if (Math.random() < 0.5) {
+          x = Math.random() < 0.5 ? -30 : canvas.width + 30;
+          y = Math.random() * canvas.height;
+        } else {
+          x = Math.random() * canvas.width;
+          y = Math.random() < 0.5 ? -30 : canvas.height + 30;
+        }
+        bots.push(new Bot(x, y, baseSpeed, botHealth));
+      }
+    }
+
+    function createExplosion(x, y, color, count = 10) {
+      for (let i = 0; i < count; i++) {
+        particles.push(new Particle(x, y, color));
+      }
+    }
+
+    function restartGame() {
+      player = new Player();
+      bullets = [];
+      bots = [];
+      particles = [];
+      score = 0;
+      wave = 1;
+      botsToSpawn = 3;
+      isGameOver = false;
+      spawnWave();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function update() {
+      if (isGameOver) return;
+
+      player.update();
+
+      // Actualizar Balas
+      for (let b = bullets.length - 1; b >= 0; b--) {
+        const bullet = bullets[b];
+        bullet.update();
+
+        // Eliminar balas fuera de pantalla
+        if (
+          bullet.x < 0 || bullet.x > canvas.width ||
+          bullet.y < 0 || bullet.y > canvas.height
+        ) {
+          bullets.splice(b, 1);
+          continue;
+        }
+
+        // Detección de colisión Bala - Bot
+        for (let i = bots.length - 1; i >= 0; i--) {
+          const bot = bots[i];
+          const dist = Math.hypot(bullet.x - bot.x, bullet.y - bot.y);
+
+          if (dist < bullet.radius + bot.radius) {
+            bot.health -= 10; // Daño de la bala
+            createExplosion(bullet.x, bullet.y, '#facc15', 4);
+            bullets.splice(b, 1);
+
+            if (bot.health <= 0) {
+              createExplosion(bot.x, bot.y, '#f43f5e', 15);
+              bots.splice(i, 1);
+              score += 100;
+            }
+            break;
+          }
+        }
+      }
+
+      // Actualizar Bots
+      for (let i = 0; i < bots.length; i++) {
+        bots[i].update();
+      }
+
+      // Progresión: Si no quedan bots, iniciar nueva oleada con MÁS bots
+      if (bots.length === 0) {
+        wave++;
+        botsToSpawn += 2; // +2 bots por cada oleada superada
+        spawnWave();
+      }
+
+      // Actualizar Partículas
+      for (let p = particles.length - 1; p >= 0; p--) {
+        particles[p].update();
+        if (particles[p].alpha <= 0) {
+          particles.splice(p, 1);
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Dibujar elementos
+      particles.forEach(p => p.draw());
+      bullets.forEach(b => b.draw());
+      bots.forEach(bot => bot.draw());
+      player.draw();
+
+      // Dibujar HUD (Vida, Oleada, Puntos)
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px Segoe UI, sans-serif';
+      ctx.fillText(`Puntos: ${score}`, 20, 30);
+      ctx.fillText(`Oleada: ${wave}`, canvas.width / 2 - 35, 30);
+
+      // Barra de Vida Jugador
+      const barW = 150;
+      const barH = 12;
+      const barX = canvas.width - barW - 20;
+      const barY = 18;
+
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(barX, barY, barW, barH);
+      ctx.fillStyle = player.health > 30 ? '#22c55e' : '#ef4444';
+      ctx.fillRect(barX, barY, (player.health / player.maxHealth) * barW, barH);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(barX, barY, barW, barH);
+
+      // Pantalla de Game Over
+      if (isGameOver) {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#f43f5e';
+        ctx.font = 'bold 42px Segoe UI, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('¡HAS SIDO DESTRUIDO!', canvas.width / 2, 180);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '20px Segoe UI, sans-serif';
+        ctx.fillText(`Sobreviviste hasta la Oleada: ${wave}`, canvas.width / 2, 230);
+        ctx.fillText(`Puntuación total: ${score}`, canvas.width / 2, 265);
+        ctx.fillText('Haz clic para volver a jugar', canvas.width / 2, 320);
+        ctx.textAlign = 'left';
+      }
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      if (!isGameOver) {
+        requestAnimationFrame(gameLoop);
+      }
+    }
+
+    // Iniciar primer juego
+    spawnWave();
+    gameLoop();
+  </script>
+</body>
+</html>
